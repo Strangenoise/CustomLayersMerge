@@ -19,6 +19,9 @@ class mergeLayers(nukescripts.PythonPanel):
         self.saveJsonBtn.setTooltip('Save your current settings')
         self.saveJsonBtn.clearFlag(nuke.STARTLINE)
 
+        self.loadAllCheck = nuke.Boolean_Knob('extractAll', 'Extract all existing layers')
+        self.loadAllCheck.setFlag(nuke.STARTLINE)
+
         self.operationNames = ['atop', 'average', 'color-burn', 'color-dodge', 'conjoint-over', 'copy',
                                                 'difference', 'disjoint-over', 'divide', 'exclusion', 'from',
                                                 'geometric', 'hard-light', 'hypot', 'in', 'mask', 'matte', 'max', 'min',
@@ -26,7 +29,7 @@ class mergeLayers(nukescripts.PythonPanel):
                                                 'soft-light', 'stencil', 'under', 'xor']
         self.operation = nuke.Enumeration_Knob('operation', 'Merge operation', self.operationNames)
         self.operation.setValue('plus')
-        for k in (self.customName, self.loadJsonBtn, self.saveJsonBtn, self.operation):
+        for k in (self.customName, self.loadJsonBtn, self.saveJsonBtn, self.loadAllCheck, self.operation):
             self.addKnob(k)
 
     def knobChanged(self, knob):
@@ -46,13 +49,15 @@ class mergeLayers(nukescripts.PythonPanel):
         if os.path.isfile(presetFilePath):
             with open(presetFilePath) as presetFile:
                 data = json.load(presetFile)
-                operation = (data['operation']['value'])
-                customName = (data['customName']['value'])
+                operation = data['operation']['value']
+                customName = data['customName']['value']
+                useAll = data['loadAll']['value']
 
                 operation = unicodedata.normalize('NFKD', operation).encode('ascii', 'ignore')
 
                 self.customName.setValue(customName)
                 self.operation.setValue(operation)
+                self.loadAllCheck.setValue(useAll)
 
         else:
             print('no preset file found')
@@ -62,6 +67,7 @@ class mergeLayers(nukescripts.PythonPanel):
         # Extract infos
         prefixes = self.customName.value()
         operation = self.operation.value()
+        useAll = self.loadAllCheck.value()
 
         # Get script path
         # scriptPath = os.path.abspath(__file__)
@@ -71,12 +77,12 @@ class mergeLayers(nukescripts.PythonPanel):
         data = {}
         data['operation'] = {'value': operation}
         data['customName'] = {'value': prefixes}
+        data['loadAll'] = {'value': useAll}
 
         presetFilePath = scriptPath + 'preset.json'
 
         with open(presetFilePath, 'w') as presetFile:
             json.dump(data, presetFile)
-
 
     def extractPrefixes(self, prefixes):
 
@@ -87,6 +93,7 @@ class mergeLayers(nukescripts.PythonPanel):
     def layerMerge(self, prefixes, operation, selection):
 
             prefixes = self.extractPrefixes(prefixes)
+            useAll = self.loadAllCheck.value()
 
             # Unselect selection
             for node in selection:
@@ -112,12 +119,15 @@ class mergeLayers(nukescripts.PythonPanel):
                     shuffleYPos = baseYPose + NODE_MARGIN * 1.5
 
                     # For each layer found if it's a light layer
-                    for i, layer in enumerate(layers):
-
-                        for prefix in prefixes:
-                            # If specified prefix is found in the layer's name
-                            if prefix in layer:
-                                usedLayers.append(layer)
+                    print(useAll)
+                    if not useAll:
+                        for i, layer in enumerate(layers):
+                            for prefix in prefixes:
+                                # If specified prefix is found in the layer's name
+                                if prefix in layer:
+                                    usedLayers.append(layer)
+                    else:
+                        usedLayers = layers
 
                     # Find start XPos
                     if (len(usedLayers) % 2) == 0:
@@ -132,32 +142,28 @@ class mergeLayers(nukescripts.PythonPanel):
                     # For each light layer
                     for i, layer in enumerate(usedLayers):
 
-                        for prefix in prefixes:
+                            # Create a shuffle node
+                            shuffleNode = nuke.nodes.Shuffle(inputs=[node])
+                            shuffleNode['in'].setValue(layer)
+                            shuffleNode['postage_stamp'].setValue(True)
 
-                            # If specified prefix is found in the layer's name
-                            if prefix in layer:
-                                # Create a shuffle node
-                                shuffleNode = nuke.nodes.Shuffle(inputs=[node])
-                                shuffleNode['in'].setValue(layer)
-                                shuffleNode['postage_stamp'].setValue(True)
+                            # Position the shuffle node
+                            shuffleNode['xpos'].setValue(shuffleXPos)
+                            shuffleNode['ypos'].setValue(shuffleYPos)
 
-                                # Position the shuffle node
-                                shuffleNode['xpos'].setValue(shuffleXPos)
-                                shuffleNode['ypos'].setValue(shuffleYPos)
+                            # Create a grade node
+                            gradeNode = nuke.nodes.Grade()
+                            gradeNode.setInput(0, shuffleNode)
 
-                                # Create a grade node
-                                gradeNode = nuke.nodes.Grade()
-                                gradeNode.setInput(0, shuffleNode)
+                            # Position the grade node
+                            gradeYPos = gradeNode['ypos'].value()
+                            gradeNode['ypos'].setValue(gradeYPos + 150)
 
-                                # Position the grade node
-                                gradeYPos = gradeNode['ypos'].value()
-                                gradeNode['ypos'].setValue(gradeYPos + 150)
+                            # Store the grade node for later merging
+                            usedGrades.append(gradeNode)
 
-                                # Store the grade node for later merging
-                                usedGrades.append(gradeNode)
-
-                                # Update next xPose
-                                shuffleXPos += NODE_MARGIN
+                            # Update next xPose
+                            shuffleXPos += NODE_MARGIN
 
                     # Unselect the read node
                     node['selected'].setValue(False)
