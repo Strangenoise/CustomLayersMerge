@@ -18,7 +18,15 @@ class mergeLayers(nukescripts.PythonPanel):
         for k in (self.customName, self.operation):
             self.addKnob(k)
 
-    def layerMerge(self, prefix, operation):
+    def extractPrefixes(self, prefixes):
+
+        prefixes = prefixes.split(', ')
+
+        return prefixes
+
+    def layerMerge(self, prefixes, operation):
+
+        prefixes = self.extractPrefixes(prefixes)
 
         selection = nuke.selectedNodes()
 
@@ -47,9 +55,11 @@ class mergeLayers(nukescripts.PythonPanel):
 
                 # For each layer found if it's a light layer
                 for i, layer in enumerate(layers):
-                    # If specified prefix is found in the layer's name
-                    if prefix in layer:
-                        usedLayers.append(layer)
+
+                    for prefix in prefixes:
+                        # If specified prefix is found in the layer's name
+                        if prefix in layer:
+                            usedLayers.append(layer)
 
                 # Find start XPos
                 if (len(usedLayers) % 2) == 0:
@@ -64,30 +74,32 @@ class mergeLayers(nukescripts.PythonPanel):
                 # For each light layer
                 for i, layer in enumerate(usedLayers):
 
-                    # If specified prefix is found in the layer's name
-                    if prefix in layer:
-                        # Create a shuffle node
-                        shuffleNode = nuke.nodes.Shuffle(inputs=[node])
-                        shuffleNode['in'].setValue(layer)
-                        shuffleNode['postage_stamp'].setValue(True)
+                    for prefix in prefixes:
 
-                        # Position the shuffle node
-                        shuffleNode['xpos'].setValue(shuffleXPos)
-                        shuffleNode['ypos'].setValue(shuffleYPos)
+                        # If specified prefix is found in the layer's name
+                        if prefix in layer:
+                            # Create a shuffle node
+                            shuffleNode = nuke.nodes.Shuffle(inputs=[node])
+                            shuffleNode['in'].setValue(layer)
+                            shuffleNode['postage_stamp'].setValue(True)
 
-                        # Create a grade node
-                        gradeNode = nuke.nodes.Grade()
-                        gradeNode.setInput(0, shuffleNode)
+                            # Position the shuffle node
+                            shuffleNode['xpos'].setValue(shuffleXPos)
+                            shuffleNode['ypos'].setValue(shuffleYPos)
 
-                        # Position the grade node
-                        gradeYPos = gradeNode['ypos'].value()
-                        gradeNode['ypos'].setValue(gradeYPos + 150)
+                            # Create a grade node
+                            gradeNode = nuke.nodes.Grade()
+                            gradeNode.setInput(0, shuffleNode)
 
-                        # Store the grade node for later merging
-                        usedGrades.append(gradeNode)
+                            # Position the grade node
+                            gradeYPos = gradeNode['ypos'].value()
+                            gradeNode['ypos'].setValue(gradeYPos + 150)
 
-                        # Update next xPose
-                        shuffleXPos += NODE_MARGIN
+                            # Store the grade node for later merging
+                            usedGrades.append(gradeNode)
+
+                            # Update next xPose
+                            shuffleXPos += NODE_MARGIN
 
                 # Unselect the read node
                 node['selected'].setValue(False)
