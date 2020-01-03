@@ -1,4 +1,4 @@
 import nuke
-from CustomLayersMerge import CustomLayerMerge
+from CustomLayersMerge import loader
 
-customMenu = nuke.menu("Nuke").addMenu("Custom").addCommand('Custom Layers Merge', CustomLayerMerge.main)
+customMenu = nuke.menu("Nuke").addMenu("Custom").addCommand('Custom Layers Merge', loader.main)

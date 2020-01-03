@@ -10,18 +10,47 @@ NODE_MARGIN = 110
 class mergeLayers(nukescripts.PythonPanel):
     def __init__(self, ):
         nukescripts.PythonPanel.__init__(self, 'Merge layers')
+
+        usedKnobs = []
+
+        # Custom name
         self.customName = nuke.String_Knob('customName', 'Custom layers name', 'Light')
         self.customName.setTooltip('Insert the parts of the names you want to use, separated by ", " (comma + space)')
+        usedKnobs.append(self.customName)
+
+        # Preset buttons
         self.loadJsonBtn = nuke.Script_Knob('Load preset')
         self.loadJsonBtn.setTooltip('Load previously saved settings')
         self.loadJsonBtn.clearFlag(nuke.STARTLINE)
+        usedKnobs.append(self.loadJsonBtn)
+
         self.saveJsonBtn = nuke.Script_Knob('Save preset')
         self.saveJsonBtn.setTooltip('Save your current settings')
         self.saveJsonBtn.clearFlag(nuke.STARTLINE)
+        usedKnobs.append(self.saveJsonBtn)
 
+        # Options
         self.loadAllCheck = nuke.Boolean_Knob('extractAll', 'Extract all existing layers')
         self.loadAllCheck.setFlag(nuke.STARTLINE)
+        self.loadAllCheck.setTooltip('Extract all the existing layers without using the custom name option')
+        usedKnobs.append(self.loadAllCheck)
 
+        self.addGrade = nuke.Boolean_Knob('addGrade', 'Add grade nodes')
+        self.addGrade.setTooltip('Add a grade node after each shuffle')
+        self.addGrade.setFlag(nuke.STARTLINE)
+        usedKnobs.append(self.addGrade)
+
+        self.addCC = nuke.Boolean_Knob('addCC', 'Add color correct nodes')
+        self.addCC.setTooltip('Add a color correct node after each shuffle')
+        self.addCC.setFlag(nuke.STARTLINE)
+        usedKnobs.append(self.addCC)
+
+        self.separatedMerges = nuke.Boolean_Knob('separatedMerges', 'Separated merges')
+        self.separatedMerges.setTooltip('Add multiple merges instead of just one for all the layers')
+        self.separatedMerges.setFlag(nuke.STARTLINE)
+        usedKnobs.append(self.separatedMerges)
+
+        # Merge operation
         self.operationNames = ['atop', 'average', 'color-burn', 'color-dodge', 'conjoint-over', 'copy',
                                                 'difference', 'disjoint-over', 'divide', 'exclusion', 'from',
                                                 'geometric', 'hard-light', 'hypot', 'in', 'mask', 'matte', 'max', 'min',
@@ -29,7 +58,9 @@ class mergeLayers(nukescripts.PythonPanel):
                                                 'soft-light', 'stencil', 'under', 'xor']
         self.operation = nuke.Enumeration_Knob('operation', 'Merge operation', self.operationNames)
         self.operation.setValue('plus')
-        for k in (self.customName, self.loadJsonBtn, self.saveJsonBtn, self.loadAllCheck, self.operation):
+        usedKnobs.append(self.operation)
+
+        for k in usedKnobs:
             self.addKnob(k)
 
     def knobChanged(self, knob):
@@ -94,6 +125,9 @@ class mergeLayers(nukescripts.PythonPanel):
 
             prefixes = self.extractPrefixes(prefixes)
             useAll = self.loadAllCheck.value()
+            useGrade = self.addGrade.value()
+            useCC = self.addCC.value()
+            separateMerges = self.separatedMerges.value()
 
             # Unselect selection
             for node in selection:
@@ -102,6 +136,8 @@ class mergeLayers(nukescripts.PythonPanel):
             for node in selection:
                 # Check if the node is a read node
                 if node.Class() == 'Read':
+
+                    mergeInputs = []
 
                     # Select actual read
                     node['selected'].setValue(True)
@@ -139,53 +175,114 @@ class mergeLayers(nukescripts.PythonPanel):
                         factor = int((len(usedLayers) - 1) / 2)
                         shuffleXPos = baseXPose - (NODE_MARGIN * factor)
 
-                    # For each light layer
+                    lastMerge = ''
+
+                    # For each layer
                     for i, layer in enumerate(usedLayers):
 
-                            # Create a shuffle node
-                            shuffleNode = nuke.nodes.Shuffle(inputs=[node])
-                            shuffleNode['in'].setValue(layer)
-                            shuffleNode['postage_stamp'].setValue(True)
+                        # Create a shuffle node
+                        shuffleNode = nuke.nodes.Shuffle(inputs=[node])
+                        shuffleNode['in'].setValue(layer)
+                        shuffleNode['postage_stamp'].setValue(True)
 
-                            # Position the shuffle node
-                            shuffleNode['xpos'].setValue(shuffleXPos)
-                            shuffleNode['ypos'].setValue(shuffleYPos)
+                        # Position the shuffle node
+                        shuffleNode['xpos'].setValue(shuffleXPos)
+                        shuffleNode['ypos'].setValue(shuffleYPos)
 
+                        parent = shuffleNode
+
+                        if useGrade:
                             # Create a grade node
                             gradeNode = nuke.nodes.Grade()
-                            gradeNode.setInput(0, shuffleNode)
+                            gradeNode.setInput(0, parent)
 
                             # Position the grade node
                             gradeYPos = gradeNode['ypos'].value()
                             gradeNode['ypos'].setValue(gradeYPos + 150)
 
-                            # Store the grade node for later merging
-                            usedGrades.append(gradeNode)
+                            parent = gradeNode
 
-                            # Update next xPose
-                            shuffleXPos += NODE_MARGIN
+                            if not useCC:
+                                mergeInputs.append(gradeNode)
 
-                    # Unselect the read node
-                    node['selected'].setValue(False)
+                        if useCC:
+                            # Create a grade node
+                            ccNode = nuke.nodes.ColorCorrect()
+                            ccNode.setInput(0, parent)
 
-                    # Create a merge Node
-                    mergeNode = nuke.createNode('Merge2')
+                            # Position the grade node
+                            ccYPos = ccNode['ypos'].value()
+                            ccNode['ypos'].setValue(ccYPos + 150)
 
-                    for i, o in enumerate(self.operationNames):
-                        if operation == o:
-                            mergeNode.knob('operation').setValue(i)
-                            break
+                            mergeInputs.append(ccNode)
 
-                    # Connect the grade nodes to the merge
-                    for i, node in enumerate(usedGrades):
-                        if i < 2:
-                            mergeNode.setInput(i, node)
-                        elif i >= 2:
-                            mergeNode.setInput(i + 1, node)
+                        elif not useGrade:
+                            mergeInputs.append(shuffleNode)
 
-                    # Position merge
-                    mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
-                    mergeNode['xpos'].setValue(baseXPose)
+                        if separateMerges:
+
+                            node['selected'].setValue(False)
+
+                            if i == 0:
+                                # Create a dot Node
+                                dotNode = nuke.createNode('Dot')
+
+                                # Connect the node to the dot
+                                dotNode.setInput(0, mergeInputs[i])
+
+                                # Position the dot
+                                dotNode['ypos'].setValue(shuffleYPos + 4 + NODE_MARGIN * 2)
+                                dotNode['xpos'].setValue(shuffleXPos + 34)
+
+                                lastMerge = dotNode
+
+                            else:
+                                # Create a merge Node
+                                mergeNode = nuke.createNode('Merge2')
+
+                                for j, o in enumerate(self.operationNames):
+                                    if operation == o:
+                                        mergeNode.knob('operation').setValue(j)
+                                        break
+
+                                # Connect the nodes to the merge
+                                mergeNode.setInput(0, lastMerge)
+                                mergeNode.setInput(1, mergeInputs[i])
+
+                                # Position merge
+                                mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
+                                mergeNode['xpos'].setValue(shuffleXPos)
+
+                                node['selected'].setValue(True)
+                                mergeNode['selected'].setValue(False)
+
+                                lastMerge = mergeNode
+
+                        # Update next xPose
+                        shuffleXPos += NODE_MARGIN
+
+                    if not separateMerges:
+                        # Unselect the read node
+                        node['selected'].setValue(False)
+
+                        # Create a merge Node
+                        mergeNode = nuke.createNode('Merge2')
+
+                        for i, o in enumerate(self.operationNames):
+                            if operation == o:
+                                mergeNode.knob('operation').setValue(i)
+                                break
+
+                        # Connect the grade nodes to the merge
+                        for i, node in enumerate(mergeInputs):
+                            if i < 2:
+                                mergeNode.setInput(i, node)
+                            elif i >= 2:
+                                mergeNode.setInput(i + 1, node)
+
+                        # Position merge
+                        mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
+                        mergeNode['xpos'].setValue(baseXPose)
 
 def main():
 
