@@ -7,9 +7,9 @@ import nukescripts
 NODE_MARGIN = 110
 
 
-class mergeLayers(nukescripts.PythonPanel):
+class MergeLayers(nukescripts.PythonPanel):
     def __init__(self, ):
-        nukescripts.PythonPanel.__init__(self, 'Merge layers')
+        nukescripts.PythonPanel.__init__(self, 'Merge Custom Layers')
 
         usedKnobs = []
 
@@ -51,11 +51,13 @@ class mergeLayers(nukescripts.PythonPanel):
         usedKnobs.append(self.separatedMerges)
 
         # Merge operation
-        self.operationNames = ['atop', 'average', 'color-burn', 'color-dodge', 'conjoint-over', 'copy',
-                                                'difference', 'disjoint-over', 'divide', 'exclusion', 'from',
-                                                'geometric', 'hard-light', 'hypot', 'in', 'mask', 'matte', 'max', 'min',
-                                                'minus', 'multiply', 'out', 'over', 'overlay', 'plus', 'screen',
-                                                'soft-light', 'stencil', 'under', 'xor']
+        self.operationNames = [
+            'atop', 'average', 'color-burn', 'color-dodge', 'conjoint-over', 'copy',
+            'difference', 'disjoint-over', 'divide', 'exclusion', 'from', 'geometric',
+            'hard-light', 'hypot', 'in', 'mask', 'matte', 'max', 'min', 'minus', 'multiply',
+            'out', 'over', 'overlay', 'plus', 'screen', 'soft-light', 'stencil', 'under', 'xor'
+        ]
+
         self.operation = nuke.Enumeration_Knob('operation', 'Merge operation', self.operationNames)
         self.operation.setValue('plus')
         usedKnobs.append(self.operation)
@@ -83,12 +85,18 @@ class mergeLayers(nukescripts.PythonPanel):
                 operation = data['operation']['value']
                 customName = data['customName']['value']
                 useAll = data['loadAll']['value']
+                useGrade = data['useGrade']['value']
+                useCC = data['useCC']['value']
+                separatedMerges = data['separatedMerges']['value']
 
                 operation = unicodedata.normalize('NFKD', operation).encode('ascii', 'ignore')
 
                 self.customName.setValue(customName)
                 self.operation.setValue(operation)
                 self.loadAllCheck.setValue(useAll)
+                self.addGrade.setValue(useGrade)
+                self.addCC.setValue(useCC)
+                self.separatedMerges.setValue(separatedMerges)
 
         else:
             print('no preset file found')
@@ -99,23 +107,31 @@ class mergeLayers(nukescripts.PythonPanel):
         prefixes = self.customName.value()
         operation = self.operation.value()
         useAll = self.loadAllCheck.value()
+        useGrade = self.addGrade.value()
+        useCC = self.addCC.value()
+        separatedMerges = self.separatedMerges.value()
 
         # Get script path
         # scriptPath = os.path.abspath(__file__)
         scriptPath = 'C:/Users/TristanLG/Desktop/'
 
         # Create JSON datas
-        data = {}
-        data['operation'] = {'value': operation}
-        data['customName'] = {'value': prefixes}
-        data['loadAll'] = {'value': useAll}
+        data = {
+            'operation': {'value': operation},
+            'customName': {'value': prefixes},
+            'loadAll': {'value': useAll},
+            'useGrade': {'value': useGrade},
+            'useCC': {'value': useCC},
+            'separatedMerges': {'value': separatedMerges}
+        }
 
         presetFilePath = scriptPath + 'preset.json'
 
         with open(presetFilePath, 'w') as presetFile:
             json.dump(data, presetFile)
 
-    def extractPrefixes(self, prefixes):
+    @staticmethod
+    def extractPrefixes(prefixes):
 
         prefixes = prefixes.split(', ')
 
@@ -123,166 +139,169 @@ class mergeLayers(nukescripts.PythonPanel):
 
     def layerMerge(self, prefixes, operation, selection):
 
-            prefixes = self.extractPrefixes(prefixes)
-            useAll = self.loadAllCheck.value()
-            useGrade = self.addGrade.value()
-            useCC = self.addCC.value()
-            separateMerges = self.separatedMerges.value()
+        prefixes = self.extractPrefixes(prefixes)
+        useAll = self.loadAllCheck.value()
+        useGrade = self.addGrade.value()
+        useCC = self.addCC.value()
+        separateMerges = self.separatedMerges.value()
 
-            # Unselect selection
-            for node in selection:
-                node['selected'].setValue(False)
+        # Unselect selection
+        for node in selection:
+            node['selected'].setValue(False)
 
-            for node in selection:
-                # Check if the node is a read node
-                if node.Class() == 'Read':
+        for node in selection:
+            # Check if the node is a read node
+            if node.Class() == 'Read':
 
-                    mergeInputs = []
+                mergeInputs = []
 
-                    # Select actual read
-                    node['selected'].setValue(True)
+                # Select actual read
+                node['selected'].setValue(True)
 
-                    # Get it's position
-                    baseXPose = node['xpos'].value()
-                    baseYPose = node['ypos'].value()
+                # Get it's position
+                baseXPose = node['xpos'].value()
+                baseYPose = node['ypos'].value()
 
-                    # Get it's channels and layers
-                    channels = node.channels()
-                    layers = list(set([c.split('.')[0] for c in channels]))
-                    usedLayers = []
-                    usedGrades = []
+                # Get it's channels and layers
+                channels = node.channels()
+                layers = list(set([c.split('.')[0] for c in channels]))
+                usedLayers = []
 
-                    shuffleYPos = baseYPose + NODE_MARGIN * 1.5
+                shuffleYPos = baseYPose + NODE_MARGIN * 1.5
 
-                    # For each layer found if it's a light layer
-                    print(useAll)
-                    if not useAll:
-                        for i, layer in enumerate(layers):
-                            for prefix in prefixes:
-                                # If specified prefix is found in the layer's name
-                                if prefix in layer:
-                                    usedLayers.append(layer)
-                    else:
-                        usedLayers = layers
+                # For each layer found if it's a light layer
+                if not useAll:
+                    for i, layer in enumerate(layers):
+                        for prefix in prefixes:
+                            # If specified prefix is found in the layer's name
+                            if prefix in layer:
+                                usedLayers.append(layer)
+                else:
+                    usedLayers = layers
 
-                    # Find start XPos
-                    if (len(usedLayers) % 2) == 0:
-                        # Number of layers is even
-                        factor = float(len(usedLayers) / 2)
-                        shuffleXPos = baseXPose - (NODE_MARGIN * (factor) - NODE_MARGIN / 2)
-                    else:
-                        # Number of layers is odd
-                        factor = int((len(usedLayers) - 1) / 2)
-                        shuffleXPos = baseXPose - (NODE_MARGIN * factor)
+                # Find start XPos
+                if (len(usedLayers) % 2) == 0:
+                    # Number of layers is even
+                    factor = float(len(usedLayers) / 2)
+                    shuffleXPos = baseXPose - (NODE_MARGIN * factor - NODE_MARGIN / 2)
+                else:
+                    # Number of layers is odd
+                    factor = int((len(usedLayers) - 1) / 2)
+                    shuffleXPos = baseXPose - (NODE_MARGIN * factor)
 
-                    lastMerge = ''
+                lastMerge = ''
 
-                    # For each layer
-                    for i, layer in enumerate(usedLayers):
+                # For each layer
+                for i, layer in enumerate(usedLayers):
 
-                        # Create a shuffle node
-                        shuffleNode = nuke.nodes.Shuffle(inputs=[node])
-                        shuffleNode['in'].setValue(layer)
-                        shuffleNode['postage_stamp'].setValue(True)
+                    # Create a shuffle node
+                    shuffleNode = nuke.nodes.Shuffle(inputs=[node])
+                    shuffleNode['in'].setValue(layer)
+                    shuffleNode['postage_stamp'].setValue(True)
 
-                        # Position the shuffle node
-                        shuffleNode['xpos'].setValue(shuffleXPos)
-                        shuffleNode['ypos'].setValue(shuffleYPos)
+                    # Position the shuffle node
+                    shuffleNode['xpos'].setValue(shuffleXPos)
+                    shuffleNode['ypos'].setValue(shuffleYPos)
 
-                        parent = shuffleNode
+                    parent = shuffleNode
 
-                        if useGrade:
-                            # Create a grade node
-                            gradeNode = nuke.nodes.Grade()
-                            gradeNode.setInput(0, parent)
+                    if useGrade:
+                        # Create a grade node
+                        gradeNode = nuke.nodes.Grade()
+                        gradeNode.setInput(0, parent)
 
-                            # Position the grade node
-                            gradeYPos = gradeNode['ypos'].value()
-                            gradeNode['ypos'].setValue(gradeYPos + 150)
+                        # Position the grade node
+                        gradeYPos = gradeNode['ypos'].value()
+                        gradeNode['ypos'].setValue(gradeYPos + 150)
 
-                            parent = gradeNode
+                        parent = gradeNode
 
-                            if not useCC:
-                                mergeInputs.append(gradeNode)
+                        if not useCC:
+                            mergeInputs.append(gradeNode)
 
-                        if useCC:
-                            # Create a grade node
-                            ccNode = nuke.nodes.ColorCorrect()
-                            ccNode.setInput(0, parent)
+                    if useCC:
+                        # Create a grade node
+                        ccNode = nuke.nodes.ColorCorrect()
+                        ccNode.setInput(0, parent)
 
-                            # Position the grade node
-                            ccYPos = ccNode['ypos'].value()
-                            ccNode['ypos'].setValue(ccYPos + 150)
+                        # Position the grade node
+                        ccYPos = ccNode['ypos'].value()
+                        ccNode['ypos'].setValue(ccYPos + 150)
 
-                            mergeInputs.append(ccNode)
+                        mergeInputs.append(ccNode)
 
-                        elif not useGrade:
-                            mergeInputs.append(shuffleNode)
+                    elif not useGrade:
+                        mergeInputs.append(shuffleNode)
 
-                        if separateMerges:
+                    if separateMerges:
 
-                            node['selected'].setValue(False)
-
-                            if i == 0:
-                                # Create a dot Node
-                                dotNode = nuke.createNode('Dot')
-
-                                # Connect the node to the dot
-                                dotNode.setInput(0, mergeInputs[i])
-
-                                # Position the dot
-                                dotNode['ypos'].setValue(shuffleYPos + 4 + NODE_MARGIN * 2)
-                                dotNode['xpos'].setValue(shuffleXPos + 34)
-
-                                lastMerge = dotNode
-
-                            else:
-                                # Create a merge Node
-                                mergeNode = nuke.createNode('Merge2')
-
-                                for j, o in enumerate(self.operationNames):
-                                    if operation == o:
-                                        mergeNode.knob('operation').setValue(j)
-                                        break
-
-                                # Connect the nodes to the merge
-                                mergeNode.setInput(0, lastMerge)
-                                mergeNode.setInput(1, mergeInputs[i])
-
-                                # Position merge
-                                mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
-                                mergeNode['xpos'].setValue(shuffleXPos)
-
-                                node['selected'].setValue(True)
-                                mergeNode['selected'].setValue(False)
-
-                                lastMerge = mergeNode
-
-                        # Update next xPose
-                        shuffleXPos += NODE_MARGIN
-
-                    if not separateMerges:
-                        # Unselect the read node
                         node['selected'].setValue(False)
 
-                        # Create a merge Node
-                        mergeNode = nuke.createNode('Merge2')
+                        if i == 0:
+                            # Create a dot Node
+                            dotNode = nuke.createNode('Dot')
 
-                        for i, o in enumerate(self.operationNames):
-                            if operation == o:
-                                mergeNode.knob('operation').setValue(i)
-                                break
+                            # Connect the node to the dot
+                            dotNode.setInput(0, mergeInputs[i])
 
-                        # Connect the grade nodes to the merge
-                        for i, node in enumerate(mergeInputs):
-                            if i < 2:
-                                mergeNode.setInput(i, node)
-                            elif i >= 2:
-                                mergeNode.setInput(i + 1, node)
+                            # Position the dot
+                            dotNode['ypos'].setValue(shuffleYPos + 4 + NODE_MARGIN * 2)
+                            dotNode['xpos'].setValue(shuffleXPos + 34)
 
-                        # Position merge
-                        mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
-                        mergeNode['xpos'].setValue(baseXPose)
+                            lastMerge = dotNode
+
+                        else:
+                            # Create a merge Node
+                            mergeNode = nuke.createNode('Merge2')
+
+                            for j, o in enumerate(self.operationNames):
+                                if operation == o:
+                                    mergeNode.knob('operation').setValue(j)
+                                    break
+
+                            # Connect the nodes to the merge
+                            mergeNode.setInput(0, lastMerge)
+                            mergeNode.setInput(1, mergeInputs[i])
+
+                            # Position merge
+                            mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
+                            mergeNode['xpos'].setValue(shuffleXPos)
+
+                            node['selected'].setValue(True)
+                            mergeNode['selected'].setValue(False)
+
+                            lastMerge = mergeNode
+
+                    # Update next xPose
+                    shuffleXPos += NODE_MARGIN
+
+                if not separateMerges:
+                    # Unselect the read node
+                    node['selected'].setValue(False)
+
+                    # Create a merge Node
+                    mergeNode = nuke.createNode('Merge2')
+
+                    for i, o in enumerate(self.operationNames):
+                        if operation == o:
+                            mergeNode.knob('operation').setValue(i)
+                            break
+
+                    # Connect the grade nodes to the merge
+                    for i, mergeInput in enumerate(mergeInputs):
+                        if i < 2:
+                            mergeNode.setInput(i, mergeInput)
+                        elif i >= 2:
+                            mergeNode.setInput(i + 1, mergeInput)
+
+                    # Position merge
+                    mergeNode['ypos'].setValue(shuffleYPos + NODE_MARGIN * 2)
+                    mergeNode['xpos'].setValue(baseXPose)
+
+                currentSelection = nuke.selectedNodes()
+                for selectedNode in currentSelection:
+                    selectedNode['selected'].setValue(False)
+
 
 def main():
 
@@ -296,7 +315,7 @@ def main():
             break
 
     if readIsPresent:
-        panel = mergeLayers()
+        panel = MergeLayers()
         if panel.showModalDialog():
             panel.layerMerge(panel.customName.value(), panel.operation.value(), selection)
 

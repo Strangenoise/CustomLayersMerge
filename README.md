@@ -1,7 +1,7 @@
 # CustomLayersMerge
 
 ## What's this script purpose ?!
-This script allows you to automatically shuffle a bunch of layers based on their name, add a grade and merge them back together.
+This script allows you to automatically shuffle a bunch of layers based on their name, add a grade and/or a color node, and merge them back together.
 
 ## How to install
 
@@ -39,7 +39,7 @@ This script allows you to automatically shuffle a bunch of layers based on their
 
 3 - Enter one or more custom layer name (the part of your layers name that is common to all the wanted layers)
 
-4 - Choose the merge operation
+4 - Choose the options and merge operation
 
 5 - Click ok 
 
@@ -65,10 +65,25 @@ That's it !
 6 - All the layers containing a work in the custom layers name are extracted with shuffles, range nodes are created and everything is merged together using the provided operation.
 ![open scene](Documentation/06.jpg)
 
+## Options
+
+- Extract all existing layers
+    - The tool doesn't take the custom layers name in account and will extract all the available layers in the read node.
+    
+- Add grade nodes
+    - Add a grade node after each shuffle
+    
+- Add color correct nodes
+    - Add a color correct node after each shuffle
+    
+- Separated merges
+    - Instead of using one merge for all the shuffles, the tool creates one merge for each.
+
 ## Tips & tricks
 - You can select multiple Read nodes at onces
 - You can save the actual configuration as a preset by using the "Save preset" button
 - You can load the last configuration preset by using the "Load preset" button
+- You can use the add grade nodes and add color correct nodes together
 
 ## What the script doesn't do
 - The script automatically place the created nodes based on the read position BUT if there's already existing nodes in the way, this could lead to strange positioning. Space correctly your read nodes before using this tool.
